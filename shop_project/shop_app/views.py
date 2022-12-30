@@ -9,26 +9,32 @@ from .filters import OrderFilter
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
-
+from .decorators import unauthenticated_user, allowed_users, admin_only
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import Group
 # Create your views here.
 
+@unauthenticated_user
 def registerPage(request):
-    if request.user.is_authenticated:
-        return redirect('home')
-    else:
-        form = CreateUserForm()
-        if request.method == "POST":
-            form = UserCreationForm(request.POST)
-            if form.is_valid():
-                form.save()
-                user = form.cleaned_data.get('username')
-                messages.success(request, 'Account was created for ' + user)
+    form = CreateUserForm()
+    if request.method == "POST":
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            username = form.cleaned_data.get('username')
 
-                return redirect('login')
-        context = {'form':form}
-        return render(request, 'shop_app/register.html', context)
+            group = Group.objects.get(name='customer')
+            user.groups.add(group)
+            Customer.objects.create(
+                user = user,
+            )
+            messages.success(request, 'Account was created for ' + username)
 
+            return redirect('login')
+    context = {'form':form}
+    return render(request, 'shop_app/register.html', context)
+
+@unauthenticated_user
 def loginPage(request):
     if request.user.is_authenticated:
         return redirect('home')
@@ -52,6 +58,7 @@ def logoutUser(request):
     return redirect('login')
 
 @login_required(login_url='login')
+@admin_only
 def home(request):
     orders = Order.objects.all()
     customers = Customer.objects.all()
@@ -73,11 +80,30 @@ def home(request):
     return render(request, 'shop_app/dashboard.html', context)
 
 @login_required(login_url='login')
+@allowed_users(allowed_roles=['customer'])
+def userPage(request):
+    orders = request.user.customer.order_set.all()
+    total_orders = orders.count()
+
+    delivered = orders.filter(status='Delivered').count()
+    pending = orders.filter(status='Pending').count()
+    
+    context = {'orders':orders,'total_orders':total_orders,
+        'delivered':delivered,
+        'pending':pending}
+    return render(request, 'shop_app/user.html', context)
+
+
+@login_required(login_url='login')
+@allowed_users(allowed_roles=['admin'])
+
 def products(request):
     products = Product.objects.all()
     return render(request, 'shop_app/products.html', {'products': products})
 
 @login_required(login_url='login')
+@allowed_users(allowed_roles=['admin'])
+
 def customer(request, pk):
     customer = Customer.objects.get(id=pk)
 
@@ -91,6 +117,8 @@ def customer(request, pk):
     return render(request, 'shop_app/customer.html', context)
 
 @login_required(login_url='login')
+@allowed_users(allowed_roles=['admin'])
+
 def createOrder(request, pk):
     OrderFormSet = inlineformset_factory(Customer, Order, fields=('product', 'status'))
     customer = Customer.objects.get(id=pk)
@@ -109,6 +137,8 @@ def createOrder(request, pk):
     return render(request, 'shop_app/order_form.html', context)
 
 @login_required(login_url='login')
+@allowed_users(allowed_roles=['admin'])
+
 def updateOrder(request, pk):
     order = Order.objects.get(id=pk)
     formset = OrderForm(instance=order)
@@ -124,6 +154,8 @@ def updateOrder(request, pk):
     return render(request, 'shop_app/order_form.html', context)
 
 @login_required(login_url='login')
+@allowed_users(allowed_roles=['admin'])
+
 def deleteOrder(request, pk):
     order = Order.objects.get(id=pk)
     if request.method == 'POST':

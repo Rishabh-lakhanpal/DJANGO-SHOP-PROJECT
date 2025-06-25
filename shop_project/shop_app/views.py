@@ -23,7 +23,7 @@ def registerPage(request):
             user = form.save()
             username = form.cleaned_data.get('username')
 
-            group = Group.objects.get(name='customer')
+            group, reated = Group.objects.get_or_create(name='customer')
             user.groups.add(group)
             Customer.objects.create(
                 user = user,
